@@ -49,8 +49,6 @@ The same logic (Safe System × VRU exposure × data confidence) produced two hon
 - Column names differ between Thailand and Maharashtra (Thailand: `OvertureID`, `ProvinceID`, `InvPercentile`, etc.; Maharashtra: `DISSOLVE_ID`, `class`, `subtype`, `UrbanPC`, `Pass`, `ExcludeFromSpeedSPI`, etc.). Renaming to a common schema is consolidated in `src/schema.py`.
 - The `AnalysisStatus` column (`Valid`/`Not Included`) almost entirely determines whether the speed-related columns (`SpeedLimit`, `MedianSpeed`, `F85thPercentileSpeed`, etc.) are populated: 11,544/55,884 rows (about 21%) for Thailand and 4,010/14,082 rows (about 28%) for Maharashtra are `Valid`. For Maharashtra, even among `Valid` rows, the 433 rows with `ExcludeFromSpeedSPI=1` are left with `SpeedLimit` missing (these should be excluded from analysis).
 - `LandUse` is only RURAL/URBAN (no spelling variants). `RoadClass` has four values - motorway/trunk/primary/secondary (no spelling variants). `F85thPercentileSpeed >= MedianSpeed` holds for every Thailand row; for Maharashtra only 1 row is reversed.
-- The coordinate order in `StreetImageLink` is lon,lat,lon,lat (Thailand example: `103.47,14.84,103.44,14.87`; Maharashtra example: `73.55,16.28,73.53,16.24`). The GeoJSON coordinate order also follows the GeoJSON spec, `[lon, lat]`.
-- Coordinate ranges: Thailand lon 97.7–105.5 / lat 5.7–20.4; Maharashtra lon 72.7–80.8 / lat 15.6–21.9 (consistent with the land extent). CRS is EPSG:4326.
 
 ### Auxiliary data sources
 
@@ -77,13 +75,6 @@ Mapillary `/map_features` object_values fetched (`src/fetch_mapillary_features.p
 These detections feed `is_mapillary_vru` (school-zone sign or crosswalk marking or bicycle marking within the segment proximity buffer) and the urban exposure composite. They are not used to impute missing posted speed limits.
 
 Attribution text (to be stated in the final submission): "Contains OpenStreetMap data, © OpenStreetMap contributors, ODbL" / "Contains Overture Maps Foundation data, ODbL" / "Mapillary imagery © Mapillary contributors, CC BY-SA 4.0" / "WorldPop population data, CC BY 4.0".
-
-## Geometry check
-
-- `src/geometry.py`: a utility that assigns each segment's representative point (`LineString.interpolate(0.5, normalized=True)`, i.e. the midpoint along the line at half the segment length) and its UTM EPSG code.
-- Found that Thailand straddles UTM 47N (44,933 segments) / 48N (10,951 segments), while Maharashtra straddles UTM 43N (12,245 segments) / 44N (1,837 segments, a zone not mentioned in the planning documents). Distance calculations project each segment individually into the appropriate zone (`to_utm_by_zone`).
-- The representative points were plotted per country and visually verified (`outputs/representative_points.png`). Both Thailand's characteristic southern peninsula shape and Maharashtra's shape were correctly reproduced, with no swap of coordinate order (lon, lat).
-- Against the configured bounds check (Thailand lon 97–106 / lat 6–21), 153 records were flagged as outliers, but on inspection all were legitimate data from southern Thailand (near the Malaysian border, latitude 5.7–6.0); the actual number of anomalies was zero.
 
 ## Inventory of Safe System inputs
 
@@ -153,6 +144,8 @@ If you just want to look at the results without running anything:
 Red = Top Priority, orange = Priority, yellow = Watch, yellow-green = Low Priority, green = Aligned (`priority_class` is computed independently per country. `No Issue` is split, for display purposes only, into Aligned (`misalignment<=0`, i.e. the speed limit is already at or below V_safe, no room to lower it) and Low Priority (`misalignment>0`); the underlying data column `priority_class` itself is unchanged). The interactive version is hosted at https://iiokentaro.github.io/adb-ai-for-safer-roads-safer-speeds-challenge/ (`docs/index.html`); it shows all priority classes by default with click-through popups (score, class, review track, explanation) and toggleable class filters.
 
 ## Methodology
+
+For a more detailed pipeline description, see [`PIPELINE.md`](PIPELINE.md).
 
 1. Computing V_safe (the safe speed that should apply): without using `SpeedLimit` (the posted speed limit) or observed speed at all, the target safe speed for each segment is decided purely from Safe System thinking (the speed at which a person will not die even if struck). Specifically, the collision type (pedestrian / head-on / separated) is determined from VRU detection (`is_vru` - school-zone signage, crosswalk markings, and bicycle markings detected by Mapillary street imagery, or an OSM school node) and the road's separation structure (whether there is median separation, `is_separated`), and a fixed safe speed (30 / 70 / 80–100 km/h, per WHO Safe System criteria) is assigned per collision type. Furthermore, segments within 300 m of an intersection (`highway=traffic_signals`/`junction=yes`) have V_safe capped post hoc at 50 km/h (side-impact type), except motorway and grade-separated segments (flyover/underpass), for which a nearby junction is not an at-grade conflict. A composite VRU exposure level (High/Medium/Low) based on population density, POI density, etc. is computed separately, but it is not used for V_safe itself - it is used solely for prioritization in the Speed Safety Score (see the V_safe design section for details).
 2. Computing misalignment: `misalignment = speed limit − V_safe`. A positive value means the posted speed limit exceeds V_safe - i.e., high speed despite the presence of VRUs, and a candidate for review priority. Negative values (possibly over-regulation) are recorded in a separate column but are not used for priority. Comparison against observed speed (F85) is kept fully separate as a different axis (`operating_gap`, a diagnostic of how the segment is actually being driven).
@@ -308,7 +301,7 @@ Because honestly stating limitations is itself part of what is being evaluated, 
 - The absence of critical data (probe speeds, actual VRU counts, crash/fatality records, official posted limits) is itself the fundamental limitation: the estimates this analysis builds up (estimated speed limits, VRU exposure proxies, matching of separation structure, etc.) are all merely substitutes for data that should ideally be measured directly. Probe speed in particular is a quantity that should in principle be easy to obtain for every segment, and if such primary data were available, many of this analysis's assumptions would become unnecessary. In practice, priority should be given to properly measuring critical data, rather than stacking layer upon layer of uncertain assumptions.
 - This analysis should be positioned as a screening tool (indicating where to invest in measurement): given the limitations above, this deliverable is best interpreted as a screening tool for prioritizing investment in on-site measurement and data infrastructure, not as something that finalizes the speed limit for individual segments. Because there is no external ground-truth data, external validity has not been verified either (consistent with the limitation above that SpeedLimit, LandUse, and RoadClass are Overture-based estimates).
 
-### Conceptual defense of double-counting near schools
+### Treatment of schools
 
 As explained in the `is_vru` generalization under Considerations in this submission above, schools are counted both in the Safe System collision-type determination (`is_vru` → `pedestrian`, V_safe=30 km/h) and in the VRU exposure level (via `osm_poi_category_count`) - this is not a defect to be corrected but a deliberate, evidence-based design decision. Schools are places children commute to, and there are two pillars of justification for weighting the vicinity of schools doubly.
 
@@ -317,7 +310,7 @@ As explained in the `is_vru` generalization under Considerations in this submiss
 
 Based on these two pillars, the design in which school vicinities push up risk on both the V_safe axis (concrete VRU evidence) and the exposure axis (composite score) is not mere redundancy, but deliberate weighting grounded in two independent reasons: children's vulnerability and the magnitude of lifetime loss from death at a young age.
 
-### ★ Confirming Mapillary/OSM coverage → finalizing the VRU exposure signal★
+### Confirming Mapillary/OSM coverage → finalizing the VRU exposure signal
 
 One urban and one rural sample area were checked on the ground for each country (4 areas in total: Thailand = urban Bangkok / rural central Thailand; Maharashtra = urban Pune / rural inland) (`src/osm_coverage.py`, `src/mapillary_coverage.py`).
 
