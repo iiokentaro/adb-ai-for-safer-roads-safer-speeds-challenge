@@ -1,0 +1,241 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speed-Unsafe Segments Map — ADB AI for Safer Roads, Safer Speeds Challenge</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+  #title-bar {
+    position: absolute; top: 12px; left: 12px; z-index: 5;
+    background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 14px; max-width: 380px;
+  }
+  #title-bar b { font-size: 15px; }
+  #title-bar .sub { color: #555; font-size: 12px; margin-top: 2px; }
+
+  #region-buttons { position: absolute; top: 12px; right: 12px; z-index: 5; display: flex; gap: 6px; }
+  #region-buttons button {
+    background: white; border: 1px solid #999; border-radius: 4px; padding: 6px 10px;
+    font-size: 12px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  #region-buttons button:hover { background: #f0f0f0; }
+
+  #legend {
+    position: absolute; bottom: 24px; left: 12px; z-index: 5;
+    background: rgba(255,255,255,0.95); padding: 10px 14px; border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 12.5px; line-height: 1.7; max-width: 300px;
+  }
+  #legend b { display: block; margin-bottom: 2px; }
+  .swatch { display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; }
+  .dash { border-top: 2px dashed #333; width: 16px; display: inline-block; margin-right: 6px; vertical-align: middle; }
+  .solid { border-top: 2px solid #333; width: 16px; display: inline-block; margin-right: 6px; vertical-align: middle; }
+  label.cls-toggle { display: block; cursor: pointer; }
+  label.cls-toggle input { margin-right: 6px; }
+
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 10; background: white; padding: 14px 20px; border-radius: 6px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.3); font-size: 13px;
+  }
+
+  .maplibregl-popup-content {
+    font-size: 12.5px; line-height: 1.5; max-width: 300px;
+  }
+  .maplibregl-popup-content table { border-collapse: collapse; }
+  .maplibregl-popup-content td { padding: 1px 6px 1px 0; vertical-align: top; }
+  .maplibregl-popup-content td.k { color: #555; white-space: nowrap; }
+  .maplibregl-popup-content .expl { margin: 0 0 6px 0; font-style: italic; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="loading">Loading segments…</div>
+
+<div id="title-bar">
+  <b>Speed-Unsafe Segments</b>
+  <div class="sub">Speed Safety Score priority map — Thailand &amp; Maharashtra (India).
+  Click any highlighted segment for details. See the project
+  <a href="https://github.com/iiokentaro/adb-ai-for-safer-roads-safer-speeds-challenge" target="_blank" rel="noopener">README</a>
+  for methodology.</div>
+</div>
+
+<div id="region-buttons">
+  <button id="btn-world">World</button>
+  <button id="btn-thailand">Thailand</button>
+  <button id="btn-maharashtra">Maharashtra</button>
+</div>
+
+<div id="legend">
+  <b>Priority class (click to toggle)</b>
+  <label class="cls-toggle"><input type="checkbox" data-cls="Top Priority" checked><span class="swatch" style="background:#d73027"></span>Top Priority</label>
+  <label class="cls-toggle"><input type="checkbox" data-cls="Priority" checked><span class="swatch" style="background:#fc8d59"></span>Priority</label>
+  <label class="cls-toggle"><input type="checkbox" data-cls="Watch" checked><span class="swatch" style="background:#fee08b"></span>Watch</label>
+  <label class="cls-toggle"><input type="checkbox" data-cls="Low Priority" checked><span class="swatch" style="background:#a6d96a"></span>Low Priority (gap exists, low score)</label>
+  <label class="cls-toggle"><input type="checkbox" data-cls="Aligned" checked><span class="swatch" style="background:#4dd0e1"></span>Aligned (limit &le; V_safe)</label>
+  <label class="cls-toggle"><input type="checkbox" data-cls="Data Quality Issue (Excluded)"><span class="swatch" style="background:#636363"></span>Data Quality Issue (excluded, off by default)</label>
+  <b style="margin-top:6px;">Review track (line style)</b>
+  <div><span class="solid"></span> Review Needed (speed-limit record plausible)</div>
+  <div><span class="dash"></span> Field Verification Needed (record looks unreliable)</div>
+</div>
+
+<script>
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol("pmtiles", protocol.tile);
+
+const PMTILES_URL = "pmtiles://./segments_priority.pmtiles";
+const SOURCE_LAYER = "segments";
+
+const PRIORITY_COLOR_EXPR = [
+  "case",
+  ["==", ["get", "priority_class"], "Top Priority"], "#d73027",
+  ["==", ["get", "priority_class"], "Priority"], "#fc8d59",
+  ["==", ["get", "priority_class"], "Watch"], "#fee08b",
+  ["==", ["get", "priority_class"], "Data Quality Issue (Excluded)"], "#636363",
+  ["all", ["==", ["get", "priority_class"], "No Issue"], [">", ["to-number", ["get", "misalignment"]], 0]], "#a6d96a",
+  ["==", ["get", "priority_class"], "No Issue"], "#4dd0e1",
+  "#999999"
+];
+
+// Display-only split of "No Issue" mirroring src/priority_map.py's derive_map_class:
+// Aligned = misalignment <= 0, Low Priority = misalignment > 0 (or missing).
+const MAP_CLASS_EXPR = [
+  "case",
+  ["!=", ["get", "priority_class"], "No Issue"], ["get", "priority_class"],
+  [">", ["to-number", ["get", "misalignment"]], 0], "Low Priority",
+  "Aligned"
+];
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+  center: [95, 17],
+  zoom: 2.3,
+});
+
+const REGIONS = {
+  world: { bounds: [[68, 8], [108, 22]], padding: 40 },
+  thailand: { bounds: [[97.3, 5.6], [105.7, 20.5]], padding: 30 },
+  maharashtra: { bounds: [[72.6, 15.6], [80.9, 22.1]], padding: 30 },
+};
+document.getElementById("btn-world").onclick = () => map.fitBounds(REGIONS.world.bounds, { padding: REGIONS.world.padding });
+document.getElementById("btn-thailand").onclick = () => map.fitBounds(REGIONS.thailand.bounds, { padding: REGIONS.thailand.padding });
+document.getElementById("btn-maharashtra").onclick = () => map.fitBounds(REGIONS.maharashtra.bounds, { padding: REGIONS.maharashtra.padding });
+
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+function activeClasses() {
+  return Array.from(document.querySelectorAll(".cls-toggle input"))
+    .filter((el) => el.checked)
+    .map((el) => el.dataset.cls);
+}
+
+// MapLibre's line-dasharray does not support data-driven (per-feature)
+// expressions, only zoom expressions -- so the solid/dashed review_track
+// split has to be two layers with a filter, not one layer with a paint
+// expression (that silently fails addLayer and drops the whole layer).
+const DASHED_FILTER = ["==", ["get", "review_track"], "Field Verification Needed"];
+const SOLID_FILTER = ["!=", ["get", "review_track"], "Field Verification Needed"];
+const LINE_LAYER_IDS = ["segments-line-solid", "segments-line-dashed"];
+
+function applyFilter() {
+  const active = activeClasses();
+  const classFilter = ["in", MAP_CLASS_EXPR, ["literal", active]];
+  map.setFilter("segments-line-solid", ["all", classFilter, SOLID_FILTER]);
+  map.setFilter("segments-line-dashed", ["all", classFilter, DASHED_FILTER]);
+}
+
+map.on("load", () => {
+  map.addSource("segments", {
+    type: "vector",
+    url: PMTILES_URL,
+  });
+
+  const commonPaint = {
+    "line-color": PRIORITY_COLOR_EXPR,
+    "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1, 10, 2.5, 16, 5],
+    "line-opacity": [
+      "case",
+      ["in", ["get", "priority_class"], ["literal", ["Top Priority", "Priority", "Watch"]]], 0.9,
+      0.55
+    ],
+  };
+
+  map.addLayer({
+    id: "segments-line-solid",
+    type: "line",
+    source: "segments",
+    "source-layer": SOURCE_LAYER,
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: commonPaint,
+  });
+
+  map.addLayer({
+    id: "segments-line-dashed",
+    type: "line",
+    source: "segments",
+    "source-layer": SOURCE_LAYER,
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { ...commonPaint, "line-dasharray": [2, 2] },
+  });
+
+  applyFilter();
+  map.fitBounds(REGIONS.world.bounds, { padding: REGIONS.world.padding, animate: false });
+  document.getElementById("loading").style.display = "none";
+
+  document.querySelectorAll(".cls-toggle input").forEach((el) => {
+    el.addEventListener("change", applyFilter);
+  });
+
+  const ROUND = { speed_limit: 0, v_safe: 0, misalignment: 1, delta_fatal_percent: 1 };
+  function fmt(key, val) {
+    if (val === null || val === undefined || val === "") return "&mdash;";
+    if (key in ROUND && !isNaN(parseFloat(val))) return parseFloat(val).toFixed(ROUND[key]);
+    return val;
+  }
+  const FIELDS = [
+    ["priority_class", "Priority class"],
+    ["review_track", "Review track"],
+    ["speed_limit", "Speed limit (km/h)"],
+    ["v_safe", "Safe speed V_safe (km/h)"],
+    ["misalignment", "Gap (km/h)"],
+    ["exposure_level", "VRU exposure level"],
+    ["confidence_level", "Data confidence"],
+    ["speedlimit_plausibility", "Speed-limit plausibility"],
+    ["road_class", "Road class"],
+    ["land_use", "Land use"],
+    ["delta_fatal_percent", "Est. fatal-crash reduction (%)"],
+    ["country", "Country"],
+  ];
+
+  LINE_LAYER_IDS.forEach((layerId) => {
+    map.on("click", layerId, (e) => {
+      const p = e.features[0].properties;
+      let rows = FIELDS.map(([key, label]) =>
+        `<tr><td class="k">${label}</td><td>${fmt(key, p[key])}</td></tr>`
+      ).join("");
+      const html = `
+        <div><b>${p.segment_id ?? ""}</b></div>
+        <p class="expl">${p.score_explanation ?? ""}</p>
+        <table>${rows}</table>
+      `;
+      new maplibregl.Popup({ maxWidth: "320px" })
+        .setLngLat(e.lngLat)
+        .setHTML(html)
+        .addTo(map);
+    });
+
+    map.on("mouseenter", layerId, () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", layerId, () => { map.getCanvas().style.cursor = ""; });
+  });
+});
+</script>
+
+</body>
+</html>

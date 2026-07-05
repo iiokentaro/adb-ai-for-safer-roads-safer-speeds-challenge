@@ -1,0 +1,14 @@
+{
+  "country": "thailand",
+  "ISOCHRONE_MIN_URBAN": 3,
+  "ISOCHRONE_MIN_RURAL": 5,
+  "RURAL_FLOOR_M": 200,
+  "ISOCHRONE_CORRIDOR_M": 15,
+  "MAX_SNAP_M": 50,
+  "PARALLEL_WORKERS": 16,
+  "valhalla_url": "http://localhost:8003/isochrone",
+  "n_schools": 17142,
+  "n_isochrone": 17142,
+  "n_buffer_fallback": 0,
+  "generated_at": "2026-07-01T01:51:04.566775+00:00"
+}

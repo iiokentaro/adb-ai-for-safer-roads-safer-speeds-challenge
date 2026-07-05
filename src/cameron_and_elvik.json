@@ -1,0 +1,227 @@
+﻿{
+    "source": {
+        "primary": "Cameron, M.H. & Elvik, R. (2010). Nilsson's Power Model connecting speed and road trauma: Applicability by road type and alternative models for urban roads. Accident Analysis and Prevention 42, 1908-1915.",
+        "exponent_table": "Elvik (2009), TOI report 1034/2009, as reproduced in Cameron & Elvik (2010) Table 8",
+        "note": "Exponent p in the relation (after/before) = (V_after / V_before)^p. Higher injury severity has higher p. Road environment is a significant moderator; urban/residential exponents are substantially lower than rural/freeway."
+    },
+    "environment_mapping": {
+        "rural_freeway": "Apply to land_use == RURAL (and to motorway/freeway segments regardless of land_use, since freeway exponents cluster with the high-speed group).",
+        "urban_residential": "Apply to land_use == URBAN (non-motorway)."
+    },
+    "exponents": {
+        "fatal_accidents": {
+            "rural_freeway": {
+                "best": 4.1,
+                "ci95": [
+                    2.9,
+                    5.3
+                ]
+            },
+            "urban_residential": {
+                "best": 2.6,
+                "ci95": [
+                    0.3,
+                    4.9
+                ]
+            },
+            "all_roads": {
+                "best": 3.5,
+                "ci95": [
+                    2.4,
+                    4.6
+                ]
+            }
+        },
+        "fatalities": {
+            "rural_freeway": {
+                "best": 4.6,
+                "ci95": [
+                    4.0,
+                    5.2
+                ]
+            },
+            "urban_residential": {
+                "best": 3.0,
+                "ci95": [
+                    -0.5,
+                    6.5
+                ]
+            },
+            "all_roads": {
+                "best": 4.3,
+                "ci95": [
+                    3.7,
+                    4.9
+                ]
+            }
+        },
+        "serious_injury_accidents": {
+            "rural_freeway": {
+                "best": 2.6,
+                "ci95": [
+                    -2.7,
+                    7.9
+                ]
+            },
+            "urban_residential": {
+                "best": 1.5,
+                "ci95": [
+                    0.9,
+                    2.1
+                ]
+            },
+            "all_roads": {
+                "best": 2.0,
+                "ci95": [
+                    1.4,
+                    2.6
+                ]
+            }
+        },
+        "seriously_injured_road_users": {
+            "rural_freeway": {
+                "best": 3.5,
+                "ci95": [
+                    0.5,
+                    5.5
+                ]
+            },
+            "urban_residential": {
+                "best": 2.0,
+                "ci95": [
+                    0.8,
+                    3.2
+                ]
+            },
+            "all_roads": {
+                "best": 3.0,
+                "ci95": [
+                    2.0,
+                    4.0
+                ]
+            }
+        },
+        "slight_injury_accidents": {
+            "rural_freeway": {
+                "best": 1.1,
+                "ci95": [
+                    0.0,
+                    2.2
+                ]
+            },
+            "urban_residential": {
+                "best": 1.0,
+                "ci95": [
+                    0.6,
+                    1.4
+                ]
+            },
+            "all_roads": {
+                "best": 1.0,
+                "ci95": [
+                    0.7,
+                    1.3
+                ]
+            }
+        },
+        "slightly_injured_road_users": {
+            "rural_freeway": {
+                "best": 1.4,
+                "ci95": [
+                    0.5,
+                    2.3
+                ]
+            },
+            "urban_residential": {
+                "best": 1.1,
+                "ci95": [
+                    0.9,
+                    1.3
+                ]
+            },
+            "all_roads": {
+                "best": 1.3,
+                "ci95": [
+                    1.1,
+                    1.5
+                ]
+            }
+        },
+        "injury_accidents_all": {
+            "rural_freeway": {
+                "best": 1.6,
+                "ci95": [
+                    0.9,
+                    2.3
+                ]
+            },
+            "urban_residential": {
+                "best": 1.2,
+                "ci95": [
+                    0.7,
+                    1.7
+                ]
+            },
+            "all_roads": {
+                "best": 1.5,
+                "ci95": [
+                    1.2,
+                    1.8
+                ]
+            }
+        },
+        "injured_road_users_all": {
+            "rural_freeway": {
+                "best": 2.2,
+                "ci95": [
+                    1.8,
+                    2.6
+                ]
+            },
+            "urban_residential": {
+                "best": 1.4,
+                "ci95": [
+                    0.4,
+                    2.4
+                ],
+                "ci_note": "confidence interval specified informally in source"
+            },
+            "all_roads": {
+                "best": 2.0,
+                "ci95": [
+                    1.6,
+                    2.4
+                ]
+            }
+        },
+        "pdo_accidents": {
+            "rural_freeway": {
+                "best": 1.5,
+                "ci95": [
+                    0.1,
+                    2.9
+                ]
+            },
+            "urban_residential": {
+                "best": 0.8,
+                "ci95": [
+                    0.1,
+                    1.5
+                ]
+            },
+            "all_roads": {
+                "best": 1.0,
+                "ci95": [
+                    0.5,
+                    1.5
+                ]
+            }
+        }
+    },
+    "implementation_notes": {
+        "formula": "delta_fatal_percent = (1 - (V_post / V_op) ^ p) * 100, with p = exponents[category][environment].best",
+        "sensitivity": "Recompute with ci95[0] and ci95[1] to report a benefit range, not a point estimate. Urban fatal CI is very wide (0.3-4.9), so urban point estimates must not be presented as precise.",
+        "urban_caveat": "Cameron & Elvik conclude mean speed alone is insufficient on urban roads. MedianSpeed-based urban benefit is an approximation. Note this limitation in README.",
+        "motorway_handling": "Freeway exponents fall in the high-speed group. Assign motorway/freeway segments to rural_freeway exponents even if their land_use is URBAN, consistent with the paper's grouping."
+    }
+}
